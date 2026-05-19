@@ -5,13 +5,9 @@ local SID_MEM = TID_MEM + 0x02
 local PID_MEM = pokemon1 + 0x00
 local XPTR_MEM = 0x03005008
 
-local offset = { x = 0x0000, y = 0x0002 }
-local location = { x = 10, y = 5 }
-
 function isShiny(data)
     return (data[1] ~ data[2] ~ data[3] ~ data[4]) < 8
 end
-
 function read_data()
     local TID = emu:read16(TID_MEM)
     local SID = emu:read16(SID_MEM)
@@ -19,11 +15,6 @@ function read_data()
     local PID2 = emu:read16(PID_MEM + 0x02)
     return {TID, SID, PID1, PID2}
 end
-
-function check_movement()
-    if emu:read8(0x0203707E) == 0x01 then return true end
-end
-
 function snap_shot()
     local snapShot = ""
     local data = emu:readRange(0x020204B0,48)
@@ -38,8 +29,6 @@ local said_yes = false
 local SHINYYYY = false
 local callID
 local press = true
-local box2
-local box1
 local openedText = false
 
 
@@ -48,17 +37,23 @@ local last = snap_shot()
 local current
 local change = false
 local changeCounter = 0
+local shinyCounter = 0
+local resetCounter = 1319
+local delayCounter = resetCounter
+local seed
+local frames = 0
 
--- 02020880 has a value that is H at important moments
-emu:addKey(0)
 
 local function on_frame()
-    -- box1 = emu:read32(0x020204C0)
-    -- box2 = emu:read32(0x020204D0)
-    -- box1 == 134482688 
-    -- box2 == 19205892
+    frames = frames + 1
+    if delayCounter > 0 then
+        delayCounter = delayCounter - 1
+        return
+    end
+    
 
     
+
     current = snap_shot()
 
     if current ~= last then
@@ -83,13 +78,19 @@ local function on_frame()
 
     press = not press
 
-
+    if emu:read16(PID_MEM + 0x02) ~= 0 and emu:read16(PID_MEM) ~=0 then
+        if isShiny(read_data()) then
+                shinyCounter = shinyCounter + 1
+                resetCounter = resetCounter + 1
+                SHINYYYY = true
+                console:log(tostring(shinyCounter) .. " shinies encountered \n" .. tostring(resetCounter) .. " attempt(s)" .. tostring(frames) .. "frame(s)")
+                callbacks:remove(callID)
+        end
+    end
 
     if before == current and changeCounter >= 5 and emu:read8(0x02020888) == 72 then
-        if isShiny(read_data()) then
-            SHINYYYY = true
-            callbacks:remove(callID)
-        else
+        if not isShiny(read_data()) then
+            resetCounter = resetCounter + 1
             said_yes = false
             SHINYYYY = false
             press = true
@@ -97,21 +98,25 @@ local function on_frame()
             last = before
             changeCounter = 0
             change = false
+            frames = 0
+            delayCounter = resetCounter
+
+
+            local d = read_data()
+            local xor = d[1] ~ d[2] ~ d[3] ~ d[4]
+            console:log("TID:" .. d[1] .. " SID:" .. d[2] .. " PID1:" .. d[3] .. " PID2:" .. d[4] .. " XOR:" .. xor)
+            console:log(tostring(shinyCounter) .. " shinies encountered \n" .. tostring(resetCounter) .. " attempt(s)")
+
+            console:log("Seed: " .. tostring(seed))
+
+
             emu:addKey(0)
             emu:loadStateSlot(1)
+            
         end
     end
 end
 
-
-
-
-callID = callbacks:add("frame", function()
-        local ok, err = pcall(function()
-            on_frame()
-        end)
-if not ok then
-    console:log("Error: " .. tostring(err))
-end
-end
-)
+emu:loadStateSlot(1)
+emu:addKey(0)
+callID = callbacks:add("frame", on_frame)
